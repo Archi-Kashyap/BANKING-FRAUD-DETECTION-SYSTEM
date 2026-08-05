@@ -1,0 +1,60 @@
+# ============================================================
+# BANKING FRAUD DETECTION — .gitignore
+# ============================================================
+
+# --- Environment / Secrets ---
+.env
+*.env
+.env.local
+.env.*.local
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# --- Virtual environments ---
+venv/
+.venv/
+env/
+ENV/
+
+# --- Generated output files (large) ---
+agent1_results.json
+agent2_results.json
+agent3_results.json
+agent4_results.json
+system_evaluation.csv
+agent2_evaluation.csv
+
+# --- Baseline / scratch artefacts ---
+agent2_results_baseline.json
+agent2_results_v4_baseline.json
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+*.ipynb
+
+# --- VS Code / IDEs ---
+.vscode/
+.idea/
+*.suo
+*.user
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Temporary files ---
+tempCodeRunnerFile.py
+*.tmp
+*.bak
+*.log
