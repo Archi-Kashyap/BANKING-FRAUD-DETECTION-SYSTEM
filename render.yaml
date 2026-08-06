@@ -1,0 +1,27 @@
+services:
+  # The Backend FastAPI Service
+  - type: web
+    name: fraud-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api:api --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.12
+      - key: GROQ_API_KEY
+        sync: false # You will provide this in the Render Dashboard
+
+  # The Frontend Streamlit Service
+  - type: web
+    name: fraud-dashboard
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.12
+      - key: API_URL
+        fromService:
+          type: web
+          name: fraud-api
+          envVarKey: RENDER_EXTERNAL_URL
