@@ -11,7 +11,7 @@ if not api_key:
 
 client = Groq(api_key=api_key)
 
-MODEL_NAME = "llama-3.1-8b-instant"
+MODEL_NAME = "qwen/qwen3.8-27b"
 
 response = client.chat.completions.create(
     model=MODEL_NAME,

@@ -16,7 +16,7 @@ OUTPUT_FILE = "agent1_results.json"
 # Agent 1 MUST process the same transactions.
 NUMBER_OF_TRANSACTIONS = 100
 
-MODEL_NAME = "llama-3.1-8b-instant"
+MODEL_NAME = "qwen/qwen3.8-27b"
 
 
 # ============================================================

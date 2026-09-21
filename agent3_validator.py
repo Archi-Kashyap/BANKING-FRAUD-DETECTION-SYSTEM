@@ -19,7 +19,7 @@
 
 # # client = Groq(api_key=api_key)
 
-# # MODEL_NAME = "llama-3.1-8b-instant"
+# # MODEL_NAME = "qwen/qwen3.8-27b"
 
 
 # # # ============================================================
@@ -484,7 +484,7 @@
 # client = Groq(api_key=api_key)
 
 # # Updated model
-# MODEL_NAME = "llama-3.1-8b-instant"
+# MODEL_NAME = "qwen/qwen3.8-27b"
 
 
 # # ============================================================
@@ -1012,6 +1012,7 @@
 import pandas as pd
 import json
 import os
+import time
 from groq import Groq
 from dotenv import load_dotenv
 
@@ -1026,7 +1027,9 @@ MAX_TRANSACTIONS = None
 
 LLM_EXPLANATIONS = 20
 
-MODEL_NAME = "llama-3.1-8b-instant"
+MODEL_NAME = "qwen/qwen3.8-27b"
+
+LLM_CALL_PAUSE_SECONDS = 8
 
 
 # ============================================================
@@ -1410,26 +1413,59 @@ Do not make a final fraud decision.
 Return a short explanation.
 """
 
-            response = client.chat.completions.create(
+            # Retry on rate-limit (429) errors, honoring Groq's
+            # retry-after header, then pace the next call so the
+            # tokens-per-minute limit is not exceeded.
 
-                model=MODEL_NAME,
+            for attempt in range(6):
 
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
+                try:
 
-                temperature=0
-            )
+                    response = client.chat.completions.create(
 
-            result["llm_reasoning"] = (
-                response
-                .choices[0]
-                .message
-                .content
-            )
+                        model=MODEL_NAME,
+
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": prompt
+                            }
+                        ],
+
+                        temperature=0
+                    )
+
+                    result["llm_reasoning"] = (
+                        response
+                        .choices[0]
+                        .message
+                        .content
+                    )
+
+                    break
+
+                except Exception as e:
+
+                    if getattr(e, "status_code", None) != 429 or attempt >= 5:
+                        raise
+
+                    retry_after = 0.0
+
+                    try:
+
+                        retry_after = float(
+                            e.response.headers.get("retry-after", 0) or 0
+                        )
+
+                    except Exception:
+
+                        retry_after = 0.0
+
+                    time.sleep(
+                        max(retry_after, min(15 * (2 ** attempt), 60))
+                    )
+
+            time.sleep(LLM_CALL_PAUSE_SECONDS)
 
         except:
 

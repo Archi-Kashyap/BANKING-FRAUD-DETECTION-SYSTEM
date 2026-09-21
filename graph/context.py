@@ -1,4 +1,5 @@
 import os
+import time
 
 import numpy as np
 import pandas as pd
@@ -14,7 +15,8 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 DATASET_PATH = "Data/Digital_Payment_Fraud_Detection_Dataset.csv"
 RANDOM_STATE = 42
-LLM_MODEL = "llama-3.1-8b-instant"
+LLM_MODEL = "qwen/qwen3.8-27b"
+LLM_CALL_PAUSE_SECONDS = 8
 
 # Model already selected by agent2_risk_v4.py (best PR-AUC of 5 candidates)
 ML_MODEL_NAME = "Random Forest (none)"
@@ -162,15 +164,29 @@ class FraudContext:
     def explain(self, prompt):
         if self.llm is None:
             return None
-        try:
-            response = self.llm.chat.completions.create(
-                model=LLM_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0,
-            )
-            return response.choices[0].message.content.strip()
-        except Exception:
-            return None
+        # Retry on rate-limit (429) errors, honoring Groq's retry-after
+        # header, then pace calls to stay under the tokens-per-minute limit.
+        max_attempts = 6
+        for attempt in range(max_attempts):
+            try:
+                response = self.llm.chat.completions.create(
+                    model=LLM_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0,
+                )
+                content = response.choices[0].message.content.strip()
+                time.sleep(LLM_CALL_PAUSE_SECONDS)
+                return content
+            except Exception as e:
+                if getattr(e, "status_code", None) != 429 or attempt >= max_attempts - 1:
+                    return None
+                retry_after = 0.0
+                try:
+                    retry_after = float(e.response.headers.get("retry-after", 0) or 0)
+                except Exception:
+                    retry_after = 0.0
+                time.sleep(max(retry_after, min(15 * (2 ** attempt), 60)))
+        return None
 
 
 _CONTEXT = None

@@ -1,5 +1,7 @@
 import os
 import json
+import time
+
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
@@ -37,8 +39,9 @@ np.random.seed(RANDOM_STATE)
 
 DATASET_PATH = "Data/Digital_Payment_Fraud_Detection_Dataset.csv"
 OUTPUT_FILE = "agent2_results.json"
-MODEL_NAME_LLM = "llama-3.1-8b-instant"
+MODEL_NAME_LLM = "qwen/qwen3.8-27b"
 LLM_EXPLANATIONS_COUNT = 20
+LLM_CALL_PAUSE_SECONDS = 8
 
 EXPECTED_ROWS = 7500
 EXPECTED_COLUMNS = [
@@ -401,12 +404,28 @@ def main():
                     f"Amount Ratio: {amount_ratio:.2f}, International: {is_intl}, ML Prob: {ml_prob:.4f}\n"
                     f"Provide a 2-sentence objective summary."
                 )
-                res = groq_client.chat.completions.create(
-                    model=MODEL_NAME_LLM,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0,
-                )
-                llm_reasoning = res.choices[0].message.content.strip()
+                # Retry on rate-limit (429) errors, honoring Groq's
+                # retry-after header, then pace calls to stay under
+                # the tokens-per-minute limit.
+                for attempt in range(6):
+                    try:
+                        res = groq_client.chat.completions.create(
+                            model=MODEL_NAME_LLM,
+                            messages=[{"role": "user", "content": prompt}],
+                            temperature=0,
+                        )
+                        llm_reasoning = res.choices[0].message.content.strip()
+                        break
+                    except Exception as e:
+                        if getattr(e, "status_code", None) != 429 or attempt >= 5:
+                            break
+                        retry_after = 0.0
+                        try:
+                            retry_after = float(e.response.headers.get("retry-after", 0) or 0)
+                        except Exception:
+                            retry_after = 0.0
+                        time.sleep(max(retry_after, min(15 * (2 ** attempt), 60)))
+                time.sleep(LLM_CALL_PAUSE_SECONDS)
             except Exception:
                 pass
 
