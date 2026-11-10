@@ -3563,7 +3563,7 @@ with tab_analyze:
         # 3. Agent Network Diagram
         _st_components.html(
             _render_agent_network(analysis),
-            height=440,
+            height=580,
             scrolling=False,
         )
 

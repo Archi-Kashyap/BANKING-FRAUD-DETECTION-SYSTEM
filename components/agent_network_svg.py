@@ -8,7 +8,7 @@ Usage (Streamlit):
     from components.agent_network_svg import render_agent_network
     import streamlit.components.v1 as components
 
-    components.html(render_agent_network(result), height=440, scrolling=False)
+    components.html(render_agent_network(result), height=580, scrolling=False)
 """
 
 from __future__ import annotations
@@ -399,6 +399,42 @@ body {{ padding: 0; margin: 0; }}
 (function(){{
   var result = {result_json};
   document.body.innerHTML = network(result);
+
+  function syncHeight() {{
+    try {{
+      var frame = window.frameElement;
+      if (!frame && window.parent && window.parent.document) {{
+        var iframes = window.parent.document.querySelectorAll('iframe');
+        for (var i = 0; i < iframes.length; i++) {{
+          if (iframes[i].contentWindow === window) {{
+            frame = iframes[i];
+            break;
+          }}
+        }}
+      }}
+      if (frame) {{
+        var svg = document.querySelector('svg');
+        var container = document.querySelector('div') || document.body;
+        var svgHeight = svg ? svg.getBoundingClientRect().height : 0;
+        var scrollHeight = container ? container.scrollHeight : document.body.scrollHeight;
+        var targetHeight = Math.ceil(Math.max(svgHeight, scrollHeight));
+        if (targetHeight > 0) {{
+          var h = targetHeight + 14;
+          frame.style.height = h + 'px';
+          frame.height = h;
+        }}
+      }}
+    }} catch(e) {{}}
+  }}
+
+  [20, 80, 200, 450].forEach(function(d) {{
+    setTimeout(syncHeight, d);
+  }});
+  window.addEventListener('load', syncHeight);
+  window.addEventListener('resize', syncHeight);
+  if (window.ResizeObserver) {{
+    new ResizeObserver(syncHeight).observe(document.body);
+  }}
 }})();
 </script>
 </body>
@@ -429,7 +465,7 @@ def build_js_input(r: dict) -> dict:
 def render_agent_network(result: dict) -> str:
     """
     Return a self-contained HTML string for
-    ``st.components.v1.html(render_agent_network(result), height=440)``.
+    ``st.components.v1.html(render_agent_network(result), height=580)``.
 
     Parameters
     ----------
