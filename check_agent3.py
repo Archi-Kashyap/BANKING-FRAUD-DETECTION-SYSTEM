@@ -1,31 +1,39 @@
 import json
 import os
+import sys
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+from batch_loader import load_agent_results
 
 FILE_NAME = "agent3_results.json"
 
+if os.path.exists(FILE_NAME):
+    try:
+        with open(FILE_NAME, "r", encoding="utf-8") as f:
+            results = json.load(f)
+        print(f"[INFO] Loaded {len(results)} results from '{FILE_NAME}'.")
+    except Exception as exc:
+        print(f"[WARNING] Error reading '{FILE_NAME}': {exc}")
+        results = load_agent_results(
+            agent_id=3,
+            target_file=FILE_NAME,
+            fallback_file="graph_results.json",
+            run_limit=25
+        )
+else:
+    results = load_agent_results(
+        agent_id=3,
+        target_file=FILE_NAME,
+        fallback_file="graph_results.json",
+        run_limit=25
+    )
 
-# ============================================================
-# CHECK FILE
-# ============================================================
-
-if not os.path.exists(FILE_NAME):
-    print("ERROR: agent3_results.json not found.")
-    print("Run agent3_validator.py first.")
-    exit()
-
-
-# ============================================================
-# LOAD RESULTS
-# ============================================================
-
-with open(
-    FILE_NAME,
-    "r",
-    encoding="utf-8"
-) as f:
-
-    results = json.load(f)
+if not isinstance(results, list) or len(results) == 0:
+    print(f"File {FILE_NAME} not found. Run python run_graph.py --limit 100 --output agent4_results.json to generate pipeline results.")
+    sys.exit(1)
 
 
 print("=" * 70)
@@ -40,10 +48,7 @@ print("=" * 70)
 print("\nTotal results:", len(results))
 
 
-if len(results) == 0:
 
-    print("ERROR: No results found.")
-    exit()
 
 
 # ============================================================

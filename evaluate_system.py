@@ -1,566 +1,14 @@
-# import pandas as pd
-# import json
-# from sklearn.metrics import (
-#     accuracy_score,
-#     precision_score,
-#     recall_score,
-#     f1_score,
-#     confusion_matrix,
-#     classification_report
-# )
-
-# # ============================================================
-# # 1. LOAD DATASET
-# # ============================================================
-
-# DATASET_PATH = "Data/Digital_Payment_Fraud_Detection_Dataset.csv"
-
-# df = pd.read_csv(DATASET_PATH)
-
-# print("=" * 70)
-# print("          MULTI-AGENT SYSTEM EVALUATION")
-# print("=" * 70)
-
-# print("\nDataset shape:", df.shape)
-
-
-# # ============================================================
-# # 2. LOAD AGENT 4 RESULTS
-# # ============================================================
-
-# with open(
-#     "agent4_results.json",
-#     "r",
-#     encoding="utf-8"
-# ) as f:
-
-#     results = json.load(f)
-
-# print(
-#     "Agent 4 results:",
-#     len(results)
-# )
-
-
-# # ============================================================
-# # 3. CREATE PREDICTION TABLE
-# # ============================================================
-
-# predictions = []
-
-# for result in results:
-
-#     transaction_id = result["transaction_id"]
-
-#     decision = result["decision"]
-
-#     fraud_score = result["fraud_score"]
-
-#     # Convert Agent 4 decision to binary label
-#     if decision in ["FRAUD", "SUSPICIOUS"]:
-#         predicted_label = 1
-#     else:
-#         predicted_label = 0
-
-#     predictions.append({
-#         "transaction_id": transaction_id,
-#         "fraud_score": fraud_score,
-#         "decision": decision,
-#         "predicted_label": predicted_label
-#     })
-
-
-# pred_df = pd.DataFrame(predictions)
-
-
-# # ============================================================
-# # 4. MERGE WITH REAL DATASET
-# # ============================================================
-
-# evaluation_df = pred_df.merge(
-#     df[
-#         [
-#             "transaction_id",
-#             "fraud_label"
-#         ]
-#     ],
-#     on="transaction_id",
-#     how="inner"
-# )
-
-
-# print(
-#     "\nTransactions successfully matched:",
-#     len(evaluation_df)
-# )
-
-
-# if len(evaluation_df) == 0:
-
-#     raise ValueError(
-#         "No transaction IDs matched the dataset."
-#     )
-
-
-# # ============================================================
-# # 5. ACTUAL VS PREDICTED
-# # ============================================================
-
-# y_true = evaluation_df[
-#     "fraud_label"
-# ].astype(int)
-
-# y_pred = evaluation_df[
-#     "predicted_label"
-# ].astype(int)
-
-
-# # ============================================================
-# # 6. METRICS
-# # ============================================================
-
-# accuracy = accuracy_score(
-#     y_true,
-#     y_pred
-# )
-
-# precision = precision_score(
-#     y_true,
-#     y_pred,
-#     zero_division=0
-# )
-
-# recall = recall_score(
-#     y_true,
-#     y_pred,
-#     zero_division=0
-# )
-
-# f1 = f1_score(
-#     y_true,
-#     y_pred,
-#     zero_division=0
-# )
-
-
-# # ============================================================
-# # 7. DISPLAY METRICS
-# # ============================================================
-
-# print("\n")
-# print("=" * 70)
-# print("                 PERFORMANCE")
-# print("=" * 70)
-
-# print(
-#     f"\nAccuracy :  {accuracy:.4f}"
-# )
-
-# print(
-#     f"Precision:  {precision:.4f}"
-# )
-
-# print(
-#     f"Recall   :  {recall:.4f}"
-# )
-
-# print(
-#     f"F1 Score :  {f1:.4f}"
-# )
-
-
-# # ============================================================
-# # 8. CONFUSION MATRIX
-# # ============================================================
-
-# cm = confusion_matrix(
-#     y_true,
-#     y_pred
-# )
-
-# print("\n----- CONFUSION MATRIX -----")
-
-# print(cm)
-
-
-# # ============================================================
-# # 9. CLASSIFICATION REPORT
-# # ============================================================
-
-# print("\n----- CLASSIFICATION REPORT -----")
-
-# print(
-#     classification_report(
-#         y_true,
-#         y_pred,
-#         target_names=[
-#             "Legitimate",
-#             "Fraud"
-#         ],
-#         zero_division=0
-#     )
-# )
-
-
-# # ============================================================
-# # 10. DECISION DISTRIBUTION
-# # ============================================================
-
-# print(
-#     "\n----- AGENT 4 DECISIONS -----"
-# )
-
-# print(
-#     evaluation_df[
-#         "decision"
-#     ].value_counts()
-# )
-
-
-# # ============================================================
-# # 11. SAVE EVALUATION
-# # ============================================================
-
-# evaluation_df.to_csv(
-#     "system_evaluation.csv",
-#     index=False
-# )
-
-# print(
-#     "\nSaved: system_evaluation.csv"
-# )
-
-# print("=" * 70)
-
-
-# import pandas as pd
-# import json
-# from sklearn.metrics import (
-#     accuracy_score,
-#     precision_score,
-#     recall_score,
-#     f1_score,
-#     confusion_matrix,
-#     classification_report
-# )
-
-# # ============================================================
-# # CONFIG
-# # ============================================================
-
-# DATASET_PATH = "Data/Digital_Payment_Fraud_Detection_Dataset.csv"
-# AGENT4_FILE = "agent4_results.json"
-
-
-# # ============================================================
-# # LOAD DATASET
-# # ============================================================
-
-# print("=" * 70)
-# print("             FINAL SYSTEM EVALUATION")
-# print("=" * 70)
-
-# df = pd.read_csv(DATASET_PATH)
-
-# print("\nDataset shape:", df.shape)
-
-# if "fraud_label" not in df.columns:
-#     raise ValueError(
-#         "fraud_label column not found in dataset."
-#     )
-
-
-# # ============================================================
-# # LOAD AGENT 4
-# # ============================================================
-
-# with open(
-#     AGENT4_FILE,
-#     "r",
-#     encoding="utf-8"
-# ) as f:
-
-#     agent4_results = json.load(f)
-
-
-# print(
-#     "Agent 4 results:",
-#     len(agent4_results)
-# )
-
-
-# # ============================================================
-# # CREATE PREDICTIONS
-# # ============================================================
-
-# predictions = []
-
-# for result in agent4_results:
-
-#     transaction_id = result[
-#         "transaction_id"
-#     ]
-
-#     fraud_score = float(
-#         result["fraud_score"]
-#     )
-
-#     decision = result[
-#         "decision"
-#     ]
-
-
-#     # Binary prediction
-#     #
-#     # FRAUD and SUSPICIOUS
-#     # are treated as positive/fraud
-#     #
-#     if decision in [
-#         "FRAUD",
-#         "SUSPICIOUS"
-#     ]:
-
-#         predicted_label = 1
-
-#     else:
-
-#         predicted_label = 0
-
-
-#     predictions.append({
-
-#         "transaction_id":
-#             transaction_id,
-
-#         "fraud_score":
-#             fraud_score,
-
-#         "decision":
-#             decision,
-
-#         "predicted_label":
-#             predicted_label
-
-#     })
-
-
-# prediction_df = pd.DataFrame(
-#     predictions
-# )
-
-
-# # ============================================================
-# # MERGE WITH ACTUAL LABEL
-# # ============================================================
-
-# evaluation_df = prediction_df.merge(
-
-#     df[
-#         [
-#             "transaction_id",
-#             "fraud_label"
-#         ]
-#     ],
-
-#     on="transaction_id",
-
-#     how="inner"
-# )
-
-
-# print(
-#     "\nMatched transactions:",
-#     len(evaluation_df)
-# )
-
-
-# if len(evaluation_df) == 0:
-
-#     raise ValueError(
-#         "No transaction IDs matched."
-#     )
-
-
-# # ============================================================
-# # TRUE / PREDICTED
-# # ============================================================
-
-# y_true = evaluation_df[
-#     "fraud_label"
-# ].astype(int)
-
-# y_pred = evaluation_df[
-#     "predicted_label"
-# ].astype(int)
-
-
-# # ============================================================
-# # METRICS
-# # ============================================================
-
-# accuracy = accuracy_score(
-#     y_true,
-#     y_pred
-# )
-
-# precision = precision_score(
-#     y_true,
-#     y_pred,
-#     zero_division=0
-# )
-
-# recall = recall_score(
-#     y_true,
-#     y_pred,
-#     zero_division=0
-# )
-
-# f1 = f1_score(
-#     y_true,
-#     y_pred,
-#     zero_division=0
-# )
-
-
-# # ============================================================
-# # PRINT METRICS
-# # ============================================================
-
-# print("\n")
-# print("=" * 70)
-# print("                 PERFORMANCE")
-# print("=" * 70)
-
-# print(
-#     f"\nAccuracy  : {accuracy:.4f}"
-# )
-
-# print(
-#     f"Precision : {precision:.4f}"
-# )
-
-# print(
-#     f"Recall    : {recall:.4f}"
-# )
-
-# print(
-#     f"F1 Score  : {f1:.4f}"
-# )
-
-
-# # ============================================================
-# # CONFUSION MATRIX
-# # ============================================================
-
-# cm = confusion_matrix(
-#     y_true,
-#     y_pred
-# )
-
-
-# print("\n")
-# print("----- CONFUSION MATRIX -----")
-
-# print(
-#     "                 Predicted"
-# )
-
-# print(
-#     "                 Legit  Fraud"
-# )
-
-# print(
-#     f"Actual Legit    {cm[0][0]:5d}  {cm[0][1]:5d}"
-# )
-
-# print(
-#     f"Actual Fraud    {cm[1][0]:5d}  {cm[1][1]:5d}"
-# )
-
-
-# # ============================================================
-# # CLASSIFICATION REPORT
-# # ============================================================
-
-# print("\n")
-# print("----- CLASSIFICATION REPORT -----")
-
-# print(
-#     classification_report(
-
-#         y_true,
-
-#         y_pred,
-
-#         target_names=[
-#             "Legitimate",
-#             "Fraud"
-#         ],
-
-#         zero_division=0
-#     )
-# )
-
-
-# # ============================================================
-# # DECISION DISTRIBUTION
-# # ============================================================
-
-# print(
-#     "----- AGENT 4 DECISION DISTRIBUTION -----"
-# )
-
-# print(
-#     evaluation_df[
-#         "decision"
-#     ].value_counts()
-# )
-
-
-# # ============================================================
-# # ACTUAL DISTRIBUTION
-# # ============================================================
-
-# print(
-#     "\n----- ACTUAL DATASET DISTRIBUTION -----"
-# )
-
-# print(
-#     evaluation_df[
-#         "fraud_label"
-#     ].value_counts()
-# )
-
-
-# # ============================================================
-# # SAVE RESULTS
-# # ============================================================
-
-# evaluation_df.to_csv(
-#     "system_evaluation.csv",
-#     index=False
-# )
-
-
-# print(
-#     "\nSaved: system_evaluation.csv"
-# )
-
-
-# # ============================================================
-# # FINAL
-# # ============================================================
-
-# print("\n")
-# print("=" * 70)
-# print("             EVALUATION COMPLETE")
-# print("=" * 70)
-
-
 import json
 import os
+import sys
 
 import pandas as pd
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+from batch_loader import load_agent_results
 
 from sklearn.metrics import (
     accuracy_score,
@@ -576,7 +24,7 @@ from sklearn.metrics import (
 # CONFIGURATION
 # ============================================================
 
-DATASET_FILE =  os.path.join(
+DATASET_FILE = os.path.join(
     "Data",
     "Digital_Payment_Fraud_Detection_Dataset.csv"
 )
@@ -599,10 +47,8 @@ print("=" * 70)
 # ============================================================
 
 if not os.path.exists(DATASET_FILE):
-
-    raise FileNotFoundError(
-        f"Missing dataset file: {DATASET_FILE}"
-    )
+    print(f"\n[ERROR] Missing dataset file: {DATASET_FILE}")
+    sys.exit(1)
 
 
 df = pd.read_csv(
@@ -620,41 +66,43 @@ print(
 # ============================================================
 
 if "fraud_label" not in df.columns:
-
-    raise ValueError(
-        "Dataset must contain 'fraud_label' column."
-    )
+    print("\n[ERROR] Dataset must contain 'fraud_label' column.")
+    sys.exit(1)
 
 
 # ============================================================
 # LOAD AGENT 4
 # ============================================================
 
-if not os.path.exists(AGENT4_FILE):
-
-    raise FileNotFoundError(
-        f"Missing file: {AGENT4_FILE}\n"
-        f"Run agent4_synthesizer.py first."
+if os.path.exists(AGENT4_FILE):
+    try:
+        with open(AGENT4_FILE, "r", encoding="utf-8") as f:
+            agent4_results = json.load(f)
+        print(f"[INFO] Loaded {len(agent4_results)} results from '{AGENT4_FILE}'.")
+    except Exception as exc:
+        print(f"[WARNING] Error reading '{AGENT4_FILE}': {exc}")
+        agent4_results = load_agent_results(
+            agent_id=4,
+            target_file=AGENT4_FILE,
+            fallback_file="graph_results.json",
+            run_limit=25
+        )
+else:
+    agent4_results = load_agent_results(
+        agent_id=4,
+        target_file=AGENT4_FILE,
+        fallback_file="graph_results.json",
+        run_limit=25
     )
 
 
-with open(
-    AGENT4_FILE,
-    "r",
-    encoding="utf-8"
-) as f:
-
-    agent4_results = json.load(f)
-
-
-if not isinstance(
-    agent4_results,
-    list
-):
-
-    raise ValueError(
-        "agent4_results.json must contain a JSON list."
+if not isinstance(agent4_results, list) or len(agent4_results) == 0:
+    print(
+        f"File {AGENT4_FILE} not found. "
+        "Run python run_graph.py --limit 100 --output agent4_results.json "
+        "to generate pipeline results."
     )
+    sys.exit(1)
 
 
 print(
@@ -673,17 +121,13 @@ agent4_df = pd.DataFrame(
 
 
 if "transaction_id" not in agent4_df.columns:
-
-    raise ValueError(
-        "Agent 4 results must contain transaction_id."
-    )
+    print("\n[ERROR] Agent 4 results must contain transaction_id.")
+    sys.exit(1)
 
 
 if "decision" not in agent4_df.columns:
-
-    raise ValueError(
-        "Agent 4 results must contain decision."
-    )
+    print("\n[ERROR] Agent 4 results must contain decision.")
+    sys.exit(1)
 
 
 # ============================================================
@@ -724,10 +168,8 @@ print(
 
 
 if len(merged) == 0:
-
-    raise RuntimeError(
-        "No matching transaction IDs found."
-    )
+    print("\n[ERROR] No matching transaction IDs found.")
+    sys.exit(1)
 
 
 # ============================================================

@@ -33,6 +33,14 @@ def build_workflow(ctx=None):
 
 def analyze_transaction(app, transaction, row_index=None):
     """Runs one transaction through the graph and returns the final state."""
+    if transaction is None:
+        transaction = {}
+    if "transaction_id" not in transaction or transaction.get("transaction_id") is None or not str(transaction.get("transaction_id", "")).strip():
+        try:
+            transaction["transaction_id"] = "MANUAL"
+        except (TypeError, KeyError):
+            transaction = dict(transaction)
+            transaction["transaction_id"] = "MANUAL"
     return app.invoke({"transaction": transaction, "row_index": row_index})
 
 

@@ -1,7 +1,7 @@
 # Banking Fraud Detection — Multi-Agent System
 
 A **multi-agent AI pipeline** for detecting fraudulent digital payment transactions.  
-The system combines **behavioral analysis**, **ML-assisted risk scoring**, **rule-based validation**, and **decision synthesis** across four specialized agents.
+The system combines **behavioral analysis**, **ML-assisted risk scoring**, **rule-based validation**, and **decision synthesis** across four specialized agents orchestrated via **LangGraph**, exposed through a **FastAPI** REST backend and an interactive **Streamlit** dashboard.
 
 ---
 
@@ -23,6 +23,8 @@ The system combines **behavioral analysis**, **ML-assisted risk scoring**, **rul
 14. [Reproducibility](#14-reproducibility)
 15. [Limitations](#15-limitations)
 16. [Future Improvements](#16-future-improvements)
+17. [Appendix: Legacy Batch Pipeline](#17-appendix-legacy-batch-pipeline)
+18. [Project Structure](#18-project-structure)
 
 ---
 
@@ -58,49 +60,97 @@ This system addresses these challenges by combining:
 
 ## 3. Architecture
 
+The system uses a unified multi-agent architecture powered by **LangGraph**, exposed via a high-performance **FastAPI** REST backend and an interactive **Streamlit** dashboard ("FraudGuard Threat Analysis Console").
+
 ```
-Dataset (7,500 transactions)
-         │
-         ├──────────────────────────────────┐
-         │                                  │
-    [Agent 1]                          [Agent 2]
-  Behavior Analyzer                  Risk Assessor
-  (first 100 txns)                  (all 7,500 txns)
-  Uses Groq LLM                     Uses ML + domain rules
-         │                                  │
-         │                          [Agent 3]
-         │                     Transaction Validator
-         │                         (all 7,500 txns)
-         │                    Deterministic anomaly rules
-         │                                  │
-         └──────────────┬───────────────────┘
-                        │
-                   [Agent 4]
-               Decision Synthesizer
-          (100 txns present in Agent 1)
-          Combines all three agents
-                        │
-               [Evaluation System]
-              Compares predictions vs
-              ground-truth fraud_label
-                        │
-             system_evaluation.csv
+       +------------------------------------+             +------------------------------------+
+       |   Streamlit Dashboard (app.py)     |             |    FastAPI REST Backend (api.py)   |
+       | "FraudGuard Threat Analysis Console"|             | Port 8001: /health, /predict/{id}  |
+       |  • Dataset Explorer & Filters      |             |            POST /predict           |
+       |  • Manual Transaction Form         |             |                                    |
+       |  • Threat Gauges & HUD Breakdown   |             |                                    |
+       +-----------------+------------------+             +-----------------+------------------+
+                         |           \                                      |
+                         |            \   HTTP REST Requests                |
+                         |             \  (Port 8001)                       |
+                         |              +---------------------------------> |
+                         |                                                  |
+                         | Direct In-Process Fallback                       | Server-Side
+                         | (when API is offline)                            | Graph Invocation
+                         |                                                  |
+                         +------------------------+-------------------------+
+                                                  |
+                                                  v
++───────────────────────────────────────────────────────────────────────────────────────────────+
+│                                  LangGraph Engine (graph/)                                    │
+│                                                                                               │
+│  Shared Execution Context (graph/context.py):                                                 │
+│  • Dataset Cache: 7,500 transactions (Data/Digital_Payment_Fraud_Detection_Dataset.csv)       │
+│  • ML Model Pipeline: Stratified 5-Fold OOF Tuned Random Forest Classifier                    │
+│  • User Historical Profiles: Baseline spend, location, channel, and device frequency maps    │
+│                                                                                               │
+│  StateGraph Execution Flow (graph/workflow.py):                                               │
+│                                                                                               │
+│  START                                                                                        │
+│    │                                                                                          │
+│    ▼                                                                                          │
+│  [Agent 1: Behavior Analyzer] (graph/nodes.py::behavior_node)                                 │
+│  • Compares transaction to user's historical patterns                                        │
+│  • Evaluates amount, location, channel, device, and time-of-day deviations                    │
+│  • Optional Groq LLM behavioral narrative generation                                         │
+│    │                                                                                          │
+│    ▼                                                                                          │
+│  [Agent 2: Risk Assessor] (graph/nodes.py::risk_node)                                         │
+│  • Computes transparent domain risk score (IP risk, failed/login attempts)                    │
+│  • Generates ML fraud probability estimate via Random Forest                                  │
+│  • Blends 80% domain rules + 20% ML probability                                               │
+│    │                                                                                          │
+│    ▼                                                                                          │
+│  [Agent 3: Transaction Validator] (graph/nodes.py::validator_node)                           │
+│  • Deterministic anomaly score (amount anomaly ratio + international flag)                    │
+│  • Deterministic velocity score (failed attempts + login velocity)                            │
+│    │                                                                                          │
+│    ▼                                                                                          │
+│  [Agent 4: Decision Synthesizer] (graph/nodes.py::synthesizer_node)                          │
+│  • Synthesizes multi-agent scores into unified fraud score (0–100)                            │
+│  • Evaluates consensus across agents and active risk indicators                               │
+│  • Assigns final verdict: LEGIT (<40), SUSPICIOUS (40–69), or FRAUD (≥70)                     │
+│    │                                                                                          │
+│    ▼                                                                                          │
+│   END                                                                                         │
++───────────────────────────────────────────────────────────────────────────────────────────────+
+                                                  ▲
+                                                  │
+       +------------------------------------------+-----------------------------+
+       |               CLI Analysis & Automated Test Suites                     |
+       |  • run_graph.py: Direct CLI execution (--transaction T5 or --limit)   |
+       |  • test_agents.py: Agent rule, math, & threshold unit tests            |
+       |  • e2e_sidebar_test.py: Playwright end-to-end browser test suite       |
+       +------------------------------------------------------------------------+
 ```
 
-**Why Agent 1 processes 100 and Agent 2/3 process 7,500:**
+### Architectural Design Highlights
 
-Agent 1 calls a real LLM (Groq) for each transaction to generate behavioral narratives.  
-Processing 7,500 transactions per run would be slow and incur significant API costs.  
-Therefore Agent 1 is designed to analyze the first 100 transactions for demonstration.  
-Agent 2 and Agent 3 run on the full dataset to produce complete risk models.  
-Agent 4 synthesizes results only for the 100 transactions processed by all agents.  
-This is an **intentional architectural design decision**, not an accidental truncation.
+1. **Decoupled Frontend & Backend with Resilient Fallback**:
+   - `FastAPI (api.py)` serves as the high-throughput inference API with `/health`, `/predict/{transaction_id}`, and `/predict` (POST) endpoints.
+   - `Streamlit (app.py)` acts as the analyst threat console. It communicates with FastAPI over HTTP on port 8001. If FastAPI is offline, Streamlit automatically and instantly falls back to an in-process instance of the LangGraph engine (`get_local_engine()`), guaranteeing zero UI disruption.
+2. **LangGraph State Machine (`graph/`)**:
+   - Built on LangGraph `StateGraph(FraudState)`, defining a strictly typed sequential DAG: `START -> behavior_analyzer -> risk_assessor -> transaction_validator -> decision_synthesizer -> END`.
+   - Each agent node consumes the state, executes specialized domain/ML logic, and writes structured outputs (`behavior`, `risk`, `validation`, `result`).
+   - Shared context (`graph/context.py`) loads the dataset once, prepares user historical caches, and fits the Random Forest classifier.
+3. **Flexible Invocation Interfaces**:
+   - **Interactive Web UI**: `streamlit run app.py`
+   - **REST API**: `uvicorn api:api --reload --port 8001`
+   - **CLI Analysis**: `python run_graph.py --transaction T5` or `python run_graph.py --limit 100`
+   - **Legacy Batch Pipeline**: Independent historical scripts writing intermediate JSON files (see [Appendix: Legacy Batch Pipeline](#appendix-legacy-batch-pipeline)).
 
 ---
 
 ## 4. Agents
 
-### Agent 1 — Behavior Analyzer (`agent1_behavior.py`)
+The fraud detection pipeline is composed of four specialized agents. In the modern architecture, each agent is implemented as a specialized node in `graph/nodes.py` operating on a typed `FraudState` dictionary within the LangGraph engine (`graph/workflow.py`), while remaining runnable as standalone batch scripts (`agent*.py`).
+
+### Agent 1 — Behavior Analyzer (`graph/nodes.py::behavior_node` / `agent1_behavior.py`)
 
 **Input:** `Data/Digital_Payment_Fraud_Detection_Dataset.csv` (first 100 rows)  
 **Output:** `agent1_results.json`
@@ -133,7 +183,7 @@ This is an **intentional architectural design decision**, not an accidental trun
 
 ---
 
-### Agent 2 — Risk Assessor (`agent2_risk_v4.py`)
+### Agent 2 — Risk Assessor (`graph/nodes.py::risk_node` / `agent2_risk_v4.py`)
 
 **Input:** `Data/Digital_Payment_Fraud_Detection_Dataset.csv` (all 7,500 rows)  
 **Output:** `agent2_results.json`
@@ -179,7 +229,7 @@ Best model selected by PR-AUC (more informative than ROC-AUC on imbalanced data)
 
 ---
 
-### Agent 3 — Transaction Validator (`agent3_validator.py`)
+### Agent 3 — Transaction Validator (`graph/nodes.py::validator_node` / `agent3_validator.py`)
 
 **Input:** `Data/Digital_Payment_Fraud_Detection_Dataset.csv` (all 7,500 rows)  
 **Output:** `agent3_results.json`
@@ -208,7 +258,7 @@ Best model selected by PR-AUC (more informative than ROC-AUC on imbalanced data)
 
 ---
 
-### Agent 4 — Decision Synthesizer (`agent4_synthesizer.py`)
+### Agent 4 — Decision Synthesizer (`graph/nodes.py::synthesizer_node` / `agent4_synthesizer.py`)
 
 **Input:** `agent1_results.json`, `agent2_results.json`, `agent3_results.json`  
 **Output:** `agent4_results.json`
@@ -284,6 +334,7 @@ Best model selected by PR-AUC (more informative than ROC-AUC on imbalanced data)
 
 ---
 
+<a id="6-ml-methodology--honest-signal-report"></a>
 ## 6. ML Methodology & Honest Signal Report
 
 > **IMPORTANT:** The available dataset contains weak predictive signal for `fraud_label`
@@ -344,7 +395,27 @@ The **final hybrid risk_score** (80% domain rules + 20% ML probability) evaluate
 
 ### Why the ML Signal is Weak
 
-The ML models fail to generalize in cross-validation because the raw features (ip_risk_score, failed_attempts, login_attempts, amount, account age) do not provide a learnable pattern that holds across folds. This is common in fraud datasets. The behavioral domain rules, however, are constructed from expert knowledge about fraud patterns and provide meaningful risk stratification.
+The ML models fail to generalize in cross-validation because the raw features (ip_risk_score, failed_attempts, login_attempts, amount, account age) do not provide a learnable pattern that holds across folds. Running `python check_labels.py` demonstrates that all single-feature ROC-AUCs in `Digital_Payment_Fraud_Detection_Dataset.csv` hover around 0.50 (random chance):
+
+| Feature | Single-Feature ROC-AUC | Random Chance Baseline |
+|---|---|---|
+| `transaction_amount` | **0.4882** | 0.5000 |
+| `ip_risk_score` | **0.5042** | 0.5000 |
+| `login_attempts_last_24h` | **0.5189** | 0.5000 |
+| `account_age_days` | **0.5347** | 0.5000 |
+| `previous_failed_attempts` | **0.5176** | 0.5000 |
+| `avg_transaction_amount` | **0.5066** | 0.5000 |
+| `transaction_hour` | **0.5060** | 0.5000 |
+| `is_international` | **0.4910** | 0.5000 |
+
+Because the synthetic labels carry minimal statistical dependency on raw transaction attributes, machine learning models (such as `RandomForestClassifier`) achieve an out-of-fold PR-AUC of only ~0.07 against an imbalanced prevalence baseline of 0.065.
+
+### Honest UI Telemetry & Hybrid Architecture
+
+To ensure complete transparency and prevent giving users or stakeholders the false impression that a standalone ML model drives classifications:
+- **Model Display**: The UI sidebar explicitly labels the engine as **`Model: Hybrid (Rules + RF)`**.
+- **Telemetry Transparency**: The UI displays an active transparency badge: **`ML Signal: Supporting (Weak Dataset Baseline)`**.
+- **Architecture Rationale**: Agent 2 uses expert behavioral rules as primary signal while the Random Forest classifier provides secondary supporting input, ensuring high operational safety without relying on uncorrelated synthetic labels.
 
 ---
 
@@ -413,13 +484,13 @@ The 80/20 split means:
 ### Prerequisites
 
 - Python 3.9 or higher
-- A [Groq API key](https://console.groq.com/) (free)
+- A [Groq API key](https://console.groq.com/) (free — optional for core deterministic scoring, required for live LLM explanations)
 
 ### Setup
 
 ```bash
-# 1. Clone or download the project
-cd "project 2.0"
+# 1. Clone or navigate to the project directory
+cd BANKING-FRAUD-DETECTION-SYSTEM
 
 # 2. Create a virtual environment
 python -m venv venv
@@ -434,63 +505,127 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # 4. Create your .env file
-copy .env.example .env
-# Then edit .env and add your real GROQ_API_KEY
+copy .env.example .env    # Windows
+# cp .env.example .env    # macOS/Linux
+# Then edit .env and configure your GROQ_API_KEY
+
+# 5. (Optional) Install Playwright for UI E2E tests
+pip install playwright
+playwright install chromium
 ```
 
 ---
 
 ## 11. How to Run
 
-Run the agents in order. Each agent depends on the previous agent's output.
+The system offers three primary run modes: the **Streamlit Web Dashboard**, the **FastAPI REST Backend**, and the **LangGraph CLI Runner**, along with automated testing suites.
+
+### 1. Interactive Streamlit Dashboard (Recommended)
+
+Launch the full-featured Threat Analysis Console in your browser:
 
 ```bash
-# Step 1: Behavioral Analysis (Agent 1)
-# Processes first 100 transactions using Groq LLM
-python agent1_behavior.py
-
-# Step 2: Risk Assessment (Agent 2)
-# Processes all 7,500 transactions — no LLM required, fully deterministic
-python agent2_risk_v4.py
-
-# Step 3: Transaction Validation (Agent 3)
-# Processes all 7,500 transactions — deterministic rule-based scoring
-python agent3_validator.py
-
-# Step 4: Decision Synthesis (Agent 4)
-# Synthesizes results for the 100 transactions common to all agents
-python agent4_synthesizer.py
-
-# Step 5: End-to-End Evaluation (Agent 4 vs ground truth, 100 transactions)
-python evaluate_system.py
-
-# Step 6: Agent 2 Full-Dataset Evaluation (optional but recommended)
-# Evaluates risk_score against all 7,500 ground-truth labels
-# Provides ROC-AUC, PR-AUC, risk level breakdown
-python evaluate_agent2.py
+streamlit run app.py
 ```
 
-**Expected runtimes (approximate):**
-| Agent | Estimated Time |
-|---|---|
-| Agent 1 | 2–10 min (Groq API calls for 100 transactions) |
-| Agent 2 | 3–8 min (ML training + 7,500 inference) |
-| Agent 3 | 1–3 min (rule-based, Groq for 20 transactions) |
-| Agent 4 | < 1 min |
-| Evaluation | < 1 min |
+- **URL**: Opens automatically at `http://localhost:8501`.
+- **Key Features**:
+  - **Dataset Mode**: Filter, search, and analyze transactions from the 7,500-record dataset.
+  - **Quick Test Presets**: Test one-click scenarios (Clean UPI transaction, High-Risk international fraud attack).
+  - **Manual Entry Mode**: Input arbitrary transaction parameters (amounts, payment mode, IP risk score, device type, failed attempts) for live evaluation.
+  - **Explainability**: Live threat gauges, individual agent score breakdowns (Behavior, Risk, Anomaly, Velocity), consensus signals, and reasoning narratives.
+- **Dual-Mode Connectivity**: The UI automatically checks for the FastAPI backend on port 8001. If the API is running, requests are routed via HTTP; if the API is offline, it seamlessly falls back to the in-process local LangGraph engine with zero UI delay.
+
+---
+
+### 2. FastAPI REST Backend
+
+Run the high-performance async REST backend:
+
+```bash
+uvicorn api:api --reload --port 8001
+```
+
+- **Service URL**: `http://127.0.0.1:8001`
+- **Interactive OpenAPI Documentation**: `http://127.0.0.1:8001/docs`
+- **API Endpoints**:
+  - `GET /health` — Health check, loaded dataset size, and ML model status.
+  - `GET /predict/{transaction_id}` — Evaluates an existing dataset transaction through the multi-agent graph (e.g. `http://127.0.0.1:8001/predict/T5`).
+  - `POST /predict` — Evaluates an arbitrary transaction JSON payload. Example:
+    ```bash
+    curl -X POST "http://127.0.0.1:8001/predict" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "user_id": "U1001",
+        "transaction_amount": 75000.0,
+        "transaction_type": "Transfer",
+        "payment_mode": "Net banking",
+        "device_type": "Web",
+        "device_location": "Bangalore",
+        "account_age_days": 12,
+        "transaction_hour": 3,
+        "previous_failed_attempts": 3,
+        "avg_transaction_amount": 2500.0,
+        "is_international": 1,
+        "ip_risk_score": 0.85,
+        "login_attempts_last_24h": 6
+      }'
+    ```
+
+> **Client-Server Workflow**: Run `uvicorn api:api --reload --port 8001` in one terminal and `streamlit run app.py` in another. The Streamlit sidebar status badge will indicate `API online, 7,500 rows loaded`.
+
+---
+
+### 3. CLI Analysis via LangGraph (`run_graph.py`)
+
+Run transactions directly through the LangGraph engine from the terminal without starting a web server:
+
+```bash
+# Analyze a single transaction by ID and display complete JSON result
+python run_graph.py --transaction T5
+
+# Run batch analysis across the first N dataset transactions (defaults to 100)
+python run_graph.py --limit 100
+
+# Run batch analysis with live Groq LLM explanations saved to custom output
+python run_graph.py --limit 20 --llm --output my_results.json
+```
+
+**CLI Options:**
+| Option | Description | Default |
+|---|---|---|
+| `--transaction <ID>` | Single transaction ID (e.g., `T5`, `T145`) to analyze | None |
+| `--limit <N>` | Total number of dataset transactions to run sequentially | `100` |
+| `--output <path>` | File path for output JSON results | `graph_results.json` |
+| `--llm` | Include live Groq LLM explanations for behavioral reasoning | Disabled (fast deterministic) |
+
+---
+
+### 4. Running Automated Tests
+
+Run the test suites to verify agent math correctness and web UI functionality:
+
+```bash
+# Run agent logic, threshold, and math unit tests
+python test_agents.py
+
+# Run Playwright end-to-end browser tests on the Streamlit dashboard
+python e2e_sidebar_test.py
+```
 
 ---
 
 ## 12. Output Files
 
-| File | Agent | Records | Description |
+| File | Generator | Scope | Description |
 |---|---|---|---|
-| `agent1_results.json` | Agent 1 | 100 | Behavioral deviation scores |
-| `agent2_results.json` | Agent 2 | 7,500 | Hybrid risk scores |
-| `agent3_results.json` | Agent 3 | 7,500 | Anomaly and velocity scores |
-| `agent4_results.json` | Agent 4 | 100 | Final fraud decisions |
-| `system_evaluation.csv` | `evaluate_system.py` | 100 | Agent 4 decisions vs ground truth |
-| `agent2_evaluation.csv` | `evaluate_agent2.py` | 7,500 | Agent 2 risk_score vs ground truth |
+| `graph_results.json` | `run_graph.py` | Configurable (default 100) | Full multi-agent LangGraph analysis results per transaction |
+| `agent1_results.json` | `agent1_behavior.py` (legacy) | 100 | Behavioral deviation scores |
+| `agent2_results.json` | `agent2_risk_v4.py` (legacy) | 7,500 | Hybrid risk scores |
+| `agent3_results.json` | `agent3_validator.py` (legacy) | 7,500 | Anomaly and velocity scores |
+| `agent4_results.json` | `agent4_synthesizer.py` (legacy) | 100 | Final fraud decisions |
+| `system_evaluation.csv` | `evaluate_system.py` (legacy) | 100 | Agent 4 decisions vs ground truth |
+| `agent2_evaluation.csv` | `evaluate_agent2.py` (legacy) | 7,500 | Agent 2 risk_score vs ground truth |
 
 > **Note on `system_evaluation.csv`:** This evaluation is based on a 100-transaction sample
 > containing only **one confirmed fraud case**. The 99% accuracy figure reflects the high
@@ -502,9 +637,32 @@ python evaluate_agent2.py
 
 ---
 
+<a id="13-testing--validation"></a>
 ## 13. Testing / Validation
 
-Run the validation scripts after each agent:
+The repository includes both modern automated test suites and legacy JSON verification scripts:
+
+### Modern Automated Test Suites
+
+```bash
+# 1. Agent Logic & Math Unit Tests
+python test_agents.py
+
+# 2. Playwright UI End-to-End Tests
+python e2e_sidebar_test.py
+```
+
+- **Agent Unit Tests (`test_agents.py`)**:
+  - **Agent 3**: Validates exact anomaly thresholds (5x=1.0, 3x=0.8, 2x=0.5, 1.5x=0.3) and velocity risk formulas across combinations of failed attempts and logins.
+  - **Agent 2**: Validates domain risk calculations, IP weighting, and extreme value clipping.
+  - **Agent 1**: Validates user history tracking, cold-start handling for first-time users (0.3 baseline), and risk indicator triggers.
+  - **Agent 4**: Validates consensus synthesis, score weighting, and decision boundaries (`LEGIT`, `SUSPICIOUS`, `FRAUD`).
+- **E2E Playwright Suite (`e2e_sidebar_test.py`)**:
+  - Automatically spins up the Streamlit dashboard on an isolated port.
+  - Validates initial page render, radio button navigation, dataset mode, manual entry mode, and dynamic form inputs.
+
+### Legacy Output Checkers
+For validating JSON files generated by the legacy batch pipeline (see [Appendix: Legacy Batch Pipeline](#appendix-legacy-batch-pipeline)):
 
 ```bash
 python check_agent1.py    # Validates agent1_results.json
@@ -513,12 +671,7 @@ python check_agent3.py    # Validates agent3_results.json
 python check_agent4.py    # Validates agent4_results.json
 ```
 
-Each checker validates:
-- Correct record count
-- No duplicate transaction IDs
-- All scores within expected ranges [0, 1] or [0, 100]
-- All required fields present
-- Decision/score consistency
+Each checker validates record counts, unique IDs, score ranges (`[0, 1]` or `[0, 100]`), schema structure, and decision consistency.
 
 ---
 
@@ -606,36 +759,101 @@ The following improvements are **not yet implemented** but would meaningfully im
 
 ---
 
-## Project Structure
+<a id="appendix-legacy-batch-pipeline"></a>
+## 17. Appendix: Legacy Batch Pipeline
+
+Prior to the introduction of the LangGraph multi-agent orchestration (`graph/`), FastAPI REST service (`api.py`), and Streamlit dashboard (`app.py`), the system executed as a sequential 6-step CLI batch workflow dumping intermediate JSON files.
+
+### Legacy 6-Step Execution Flow
+
+Run the standalone agents in order. Each script depends on the previous script's JSON output:
+
+```bash
+# Step 1: Behavioral Analysis (Agent 1)
+# Processes first 100 transactions using Groq LLM -> generates agent1_results.json
+python agent1_behavior.py
+
+# Step 2: Risk Assessment (Agent 2)
+# Processes all 7,500 transactions — deterministic ML + domain rules -> generates agent2_results.json
+python agent2_risk_v4.py
+
+# Step 3: Transaction Validation (Agent 3)
+# Processes all 7,500 transactions — deterministic rule-based scoring -> generates agent3_results.json
+python agent3_validator.py
+
+# Step 4: Decision Synthesis (Agent 4)
+# Synthesizes results for the 100 transactions common to all agents -> generates agent4_results.json
+python agent4_synthesizer.py
+
+# Step 5: End-to-End Evaluation (Agent 4 vs ground truth, 100 transactions)
+# Generates system_evaluation.csv
+python evaluate_system.py
+
+# Step 6: Agent 2 Full-Dataset Evaluation (optional but recommended)
+# Evaluates risk_score against all 7,500 ground-truth labels -> generates agent2_evaluation.csv
+python evaluate_agent2.py
+```
+
+### Legacy Expected Runtimes (Approximate)
+| Script | Estimated Time | Description |
+|---|---|---|
+| `agent1_behavior.py` | 2–10 min | Groq API calls for 100 transactions |
+| `agent2_risk_v4.py` | 3–8 min | ML training + 7,500 inference |
+| `agent3_validator.py` | 1–3 min | Rule-based, Groq for 20 transactions |
+| `agent4_synthesizer.py` | < 1 min | Combines agent outputs into decisions |
+| `evaluate_system.py` | < 1 min | Accuracy/F1 evaluation on 100 sample rows |
+| `evaluate_agent2.py` | < 1 min | ROC-AUC / PR-AUC on 7,500 dataset rows |
+
+---
+
+<a id="project-structure"></a>
+## 18. Project Structure
 
 ```
-project 2.0/
+BANKING-FRAUD-DETECTION-SYSTEM/
 │
 ├── Data/
-│   └── Digital_Payment_Fraud_Detection_Dataset.csv
+│   └── Digital_Payment_Fraud_Detection_Dataset.csv   # 7,500 transaction dataset
 │
-├── agent1_behavior.py        # Agent 1: LLM behavioral analysis
-├── agent2_risk_v4.py         # Agent 2: ML + domain risk scoring
-├── agent3_validator.py       # Agent 3: Deterministic rule validation
-├── agent4_synthesizer.py     # Agent 4: Multi-agent decision synthesis
-├── evaluate_system.py        # End-to-end evaluation (100 tx vs ground truth)
-├── evaluate_agent2.py        # Agent 2 full-dataset evaluation (7,500 rows)
+├── graph/                                            # LangGraph Multi-Agent Architecture
+│   ├── __init__.py
+│   ├── state.py                                      # FraudState typed schema
+│   ├── context.py                                    # Shared context, ML pipeline & caches
+│   ├── nodes.py                                      # Agent 1-4 node implementations
+│   └── workflow.py                                   # StateGraph compilation & invocation
 │
-├── check_agent1.py           # Validation script for Agent 1 output
-├── check_agent2.py           # Validation script for Agent 2 output
-├── check_agent3.py           # Validation script for Agent 3 output
-├── check_agent4.py           # Validation script for Agent 4 output
+├── app.py                                            # Streamlit Threat Analysis Console
+├── api.py                                            # FastAPI REST backend service (port 8001)
+├── run_graph.py                                      # Unified LangGraph CLI runner
+├── run.py                                            # Unified process orchestrator (API + Streamlit)
 │
-├── requirements.txt          # Python dependencies
-├── .env.example              # Environment variable template (no real keys)
-├── .gitignore                # Git ignore rules (.env, venv, outputs)
-└── README.md                 # This file
+├── test_agents.py                                    # Agent unit & rule validation tests
+├── test_check_health.py                              # FastAPI health & fallback unit tests
+├── e2e_sidebar_test.py                               # Playwright UI end-to-end test suite
+├── check_labels.py                                   # Dataset feature vs label correlation diagnostic
+│
+├── agent1_behavior.py                                # Legacy batch Agent 1
+├── agent2_risk_v4.py                                 # Legacy batch Agent 2
+├── agent3_validator.py                               # Legacy batch Agent 3
+├── agent4_synthesizer.py                             # Legacy batch Agent 4
+├── evaluate_system.py                                # Legacy system evaluation
+├── evaluate_agent2.py                                # Legacy Agent 2 evaluation
+│
+├── check_agent1.py                                   # Legacy validator for Agent 1 JSON
+├── check_agent2.py                                   # Legacy validator for Agent 2 JSON
+├── check_agent3.py                                   # Legacy validator for Agent 3 JSON
+├── check_agent4.py                                   # Legacy validator for Agent 4 JSON
+│
+├── requirements.txt                                  # Python dependencies
+├── .env.example                                      # Environment variable template
+├── .gitignore                                        # Git ignore rules
+└── README.md                                         # System documentation
 ```
 
 **Files intentionally NOT committed to Git** (see `.gitignore`):
 - `.env` — contains real API key; never commit
 - `venv/` — local virtual environment
-- `agent*_results.json` — generated outputs; re-create by running agents
+- `agent*_results.json`, `graph_results.json` — generated outputs; re-create by running agents
 - `system_evaluation.csv`, `agent2_evaluation.csv` — generated outputs
 - `__pycache__/`, `*.pyc` — Python bytecode
 
@@ -649,5 +867,4 @@ This project is provided for educational and research purposes.
 
 *This system honestly represents its ML capabilities. It does not claim to be a  
 highly accurate fraud detector. Its value lies in its transparent, explainable,  
-reproducible multi-agent architecture that can be extended with better data.* 
-all done
+reproducible multi-agent architecture that can be extended with better data.*

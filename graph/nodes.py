@@ -33,10 +33,20 @@ def normalize_score(value):
 
 def get_indicators(data):
     indicators = data.get("risk_indicators", []) or []
-    if isinstance(indicators, list):
-        return [str(x).strip() for x in indicators if str(x).strip()]
-    text = str(indicators).strip()
-    return [text] if text else []
+    if not isinstance(indicators, list):
+        indicators = [indicators]
+    formatted = []
+    for item in indicators:
+        if isinstance(item, dict):
+            # Prefer human-readable description, fall back to indicator title
+            desc = item.get("description") or item.get("indicator")
+            if desc:
+                formatted.append(str(desc).strip())
+        elif item is not None:
+            s = str(item).strip()
+            if s:
+                formatted.append(s)
+    return formatted
 
 
 # ==================================================================
@@ -158,7 +168,7 @@ def behavior_node(state, ctx):
             "behavior_score": behavior_score,
             "risk_indicators": indicators,
             "reasoning": reasoning,
-            "transaction_id": str(tx["transaction_id"]),
+            "transaction_id": str(tx.get("transaction_id", "MANUAL")),
             "user_id": str(tx["user_id"]),
             "agent": "behavior_analyzer",
             "historical_transaction_count": int(len(history)),
@@ -240,7 +250,7 @@ def risk_node(state, ctx):
                       "dataset-level validation indicates weak predictive ML signal.")
 
     risk = {
-        "transaction_id": str(tx["transaction_id"]),
+        "transaction_id": str(tx.get("transaction_id", "MANUAL")),
         "user_id": str(tx["user_id"]),
         "agent": "risk_assessor",
         "risk_score": risk_score,
@@ -359,7 +369,7 @@ def validator_node(state, ctx):
         })
 
     validation = {
-        "transaction_id": str(tx["transaction_id"]),
+        "transaction_id": str(tx.get("transaction_id", "MANUAL")),
         "user_id": str(tx["user_id"]),
         "agent": "transaction_validator",
         "anomaly_score": anomaly_score,
@@ -403,9 +413,15 @@ CONSENSUS_BONUS_3 = 4.0
 
 
 def synthesizer_node(state, ctx=None):
-    r1 = state["behavior"]
-    r2 = state["risk"]
-    r3 = state["validation"]
+    if not isinstance(state, dict):
+        state = {}
+    elif state.get("transaction") is None:
+        state = dict(state)
+        state["transaction"] = {}
+
+    r1 = state.get("behavior") or {}
+    r2 = state.get("risk") or {}
+    r3 = state.get("validation") or {}
 
     behavior_score = normalize_score(r1.get("behavior_score", 0.0))
     transaction_score = normalize_score(r2.get("risk_score", 0.0))
@@ -498,7 +514,7 @@ def synthesizer_node(state, ctx=None):
                                "for suspicious or fraud classification.")
 
     result = {
-        "transaction_id": str(state["transaction"]["transaction_id"]),
+        "transaction_id": str(state.get("transaction", {}).get("transaction_id", "MANUAL")),
         "user_id": r1.get("user_id", r2.get("user_id", r3.get("user_id", ""))),
         "decision": decision,
         "fraud_score": round(weighted_score, 2),

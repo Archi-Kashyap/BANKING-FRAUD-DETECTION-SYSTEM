@@ -15,8 +15,13 @@ IMPORTANT:
 
 import json
 import os
+import sys
 import numpy as np
 import pandas as pd
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 from sklearn.metrics import (
     roc_auc_score,
     average_precision_score,
@@ -50,22 +55,41 @@ print("     (Separate from Agent 4 end-to-end evaluation)")
 print("=" * 70)
 
 if not os.path.exists(DATASET_FILE):
-    raise FileNotFoundError(f"Dataset not found: {DATASET_FILE}")
+    print(f"\n[ERROR] Dataset not found: {DATASET_FILE}")
+    sys.exit(1)
 
-if not os.path.exists(AGENT2_FILE):
-    raise FileNotFoundError(
-        f"{AGENT2_FILE} not found. Run agent2_risk_v4.py first."
+from batch_loader import load_agent_results
+
+if os.path.exists(AGENT2_FILE):
+    try:
+        with open(AGENT2_FILE, "r", encoding="utf-8") as fh:
+            a2_data = json.load(fh)
+        print(f"[INFO] Loaded {len(a2_data)} results from '{AGENT2_FILE}'.")
+    except Exception as exc:
+        print(f"[WARNING] Error reading '{AGENT2_FILE}': {exc}")
+        a2_data = load_agent_results(
+            agent_id=2,
+            target_file=AGENT2_FILE,
+            fallback_file="graph_results.json",
+            run_limit=25
+        )
+else:
+    a2_data = load_agent_results(
+        agent_id=2,
+        target_file=AGENT2_FILE,
+        fallback_file="graph_results.json",
+        run_limit=25
     )
+
+if not isinstance(a2_data, list) or len(a2_data) == 0:
+    print(f"File {AGENT2_FILE} not found. Run python run_graph.py --limit 100 --output agent4_results.json to generate pipeline results.")
+    sys.exit(1)
 
 df = pd.read_csv(DATASET_FILE)
 df["transaction_id"] = df["transaction_id"].astype(str)
 
 print(f"\nDataset: {df.shape[0]} rows")
 print(f"Fraud prevalence: {df['fraud_label'].mean():.4f}")
-
-with open(AGENT2_FILE, "r", encoding="utf-8") as fh:
-    a2_data = json.load(fh)
-
 print(f"Agent 2 records loaded: {len(a2_data)}")
 
 
@@ -77,7 +101,7 @@ a2_df = pd.DataFrame([
     {
         "transaction_id": str(r["transaction_id"]),
         "risk_score": float(r["risk_score"]),
-        "risk_level": r["risk_level"],
+        "risk_level": r.get("risk_level", "LOW"),
     }
     for r in a2_data
 ])
@@ -91,7 +115,8 @@ merged = df[["transaction_id", "fraud_label"]].merge(
 print(f"Matched: {len(merged)} transactions")
 
 if len(merged) == 0:
-    raise RuntimeError("No matching transaction IDs found.")
+    print("\n[ERROR] No matching transaction IDs found.")
+    sys.exit(1)
 
 y_true = merged["fraud_label"].astype(int).values
 y_score = merged["risk_score"].values
@@ -102,11 +127,15 @@ fraud_prev = y_true.mean()
 # ROC-AUC & PR-AUC
 # ============================================================
 
-roc_auc = roc_auc_score(y_true, y_score)
-pr_auc = average_precision_score(y_true, y_score)
+if len(np.unique(y_true)) > 1:
+    roc_auc = float(roc_auc_score(y_true, y_score))
+    pr_auc = float(average_precision_score(y_true, y_score))
+else:
+    roc_auc = 0.5000
+    pr_auc = float(fraud_prev)
 
 print("\n" + "=" * 70)
-print("  AGENT 2 RISK SCORE vs FRAUD LABEL — FULL DATASET (7,500 rows)")
+print(f"  AGENT 2 RISK SCORE vs FRAUD LABEL ({len(merged):,} transactions)")
 print("=" * 70)
 
 print(f"\nFraud prevalence (baseline PR-AUC):  {fraud_prev:.4f}")
@@ -160,6 +189,7 @@ y_pred_best = (y_score >= best_thresh).astype(int)
 print("\n----- CLASSIFICATION REPORT (best threshold) -----")
 print(classification_report(
     y_true, y_pred_best,
+    labels=[0, 1],
     target_names=["Legitimate", "Fraud"],
     zero_division=0
 ))
@@ -180,6 +210,10 @@ print(f"Actual Fraud     {fn:5d}   {tp:5d}")
 
 print("\n----- RISK LEVEL vs FRAUD LABEL -----")
 pivot = merged.groupby(["risk_level", "fraud_label"]).size().unstack(fill_value=0)
+for col in [0, 1]:
+    if col not in pivot.columns:
+        pivot[col] = 0
+pivot = pivot[[0, 1]]
 pivot.columns = ["Legitimate", "Fraud"]
 pivot["Total"] = pivot.sum(axis=1)
 pivot["Fraud%"] = (pivot["Fraud"] / pivot["Total"] * 100).round(2)

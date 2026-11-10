@@ -1,0 +1,485 @@
+"""
+components/agent_network_svg.py
+--------------------------------
+Animated SVG "agent network" diagram for the FraudGuard dashboard.
+Designed with ui-ux-pro-max: Dark Mode (OLED) / Cyber-Fintech Glassmorphism.
+
+Usage (Streamlit):
+    from components.agent_network_svg import render_agent_network
+    import streamlit.components.v1 as components
+
+    components.html(render_agent_network(result), height=440, scrolling=False)
+"""
+
+from __future__ import annotations
+
+# ---------------------------------------------------------------------------
+# JS function (returned as SVG string; no external libraries)
+# ---------------------------------------------------------------------------
+
+_NETWORK_JS = r"""
+function network(r) {
+  /* ── 1. Data extraction & validation ────────────────────────── */
+  const behavior   = Math.max(0, Math.min(100, +(r && r.behavior)   || 0));
+  const velocity   = Math.max(0, Math.min(100, +(r && r.velocity)   || 0));
+  const risk       = Math.max(0, Math.min(100, +(r && r.risk)       || 0));
+  const anomaly    = Math.max(0, Math.min(100, +(r && r.anomaly)    || 0));
+  const combined   = Math.max(0, Math.min(100, +(r && r.combined)   || 0));
+  const consensus  = Math.max(0, Math.min(3,   +(r && r.consensus)  || 0));
+  const label      = (r && r.label ? String(r.label) : 'SAFE').toUpperCase();
+  const rawTxId    = (r && r.t && r.t.id) ? String(r.t.id) : (r && r.tx_id ? String(r.tx_id) : 'TXN-001');
+  const rawAmount  = (r && r.t && r.t.amount) ? String(r.t.amount) : (r && r.amount_str ? String(r.amount_str) : '');
+
+  // Agent scores
+  const a1Score = Math.max(behavior, velocity);  // Agent 1: Behavior Analyzer
+  const a2Score = risk;                           // Agent 2: Risk Assessor
+  const a3Score = anomaly;                        // Agent 3: Transaction Validator
+
+  /* ── 2. Smart Tx ID & Subtitle formatting ───────────────────── */
+  let displayTxId = rawTxId;
+  let txBadge = 'LIVE INGEST';
+  let isManual = false;
+
+  if (rawTxId.includes('(manual)')) {
+    displayTxId = rawTxId.replace('(manual)', '').trim();
+    txBadge = rawAmount ? `MANUAL · ${rawAmount}` : 'MANUAL SIMULATION';
+    isManual = true;
+  } else if (rawTxId.startsWith('T') || rawTxId.startsWith('TXN')) {
+    txBadge = rawAmount ? `BATCH · ${rawAmount}` : 'BATCH STREAM';
+  } else if (rawAmount) {
+    txBadge = rawAmount;
+  }
+
+  // Prevent awkward truncation: scale font or truncate gracefully only if very long
+  let txFontSize = 21;
+  if (displayTxId.length > 14) {
+    displayTxId = displayTxId.slice(0, 13) + '…';
+    txFontSize = 16;
+  } else if (displayTxId.length > 10) {
+    txFontSize = 18;
+  }
+
+  /* ── 3. Color & Theme helpers ───────────────────────────────── */
+  function getRiskColor(s) {
+    if (s < 30) return '#10B981'; // Modern emerald green
+    if (s < 60) return '#F59E0B'; // Modern amber
+    return '#EF4444';             // Modern crimson
+  }
+
+  function getVerdictColor(v) {
+    if (v === 'SAFE')       return '#10B981';
+    if (v === 'SUSPICIOUS') return '#F59E0B';
+    return '#EF4444';
+  }
+
+  function getRiskGlow(s) {
+    if (s < 30) return 'rgba(16, 185, 129, 0.25)';
+    if (s < 60) return 'rgba(245, 158, 11, 0.25)';
+    return 'rgba(239, 68, 68, 0.25)';
+  }
+
+  function getVerdictGlow(v) {
+    if (v === 'SAFE')       return 'rgba(16, 185, 129, 0.32)';
+    if (v === 'SUSPICIOUS') return 'rgba(245, 158, 11, 0.32)';
+    return 'rgba(239, 68, 68, 0.32)';
+  }
+
+  function getLevelTag(s) {
+    if (s < 30) return 'LOW';
+    if (s < 60) return 'ELEVATED';
+    return 'HIGH';
+  }
+
+  const c1 = getRiskColor(a1Score);
+  const c2 = getRiskColor(a2Score);
+  const c3 = getRiskColor(a3Score);
+  const vc = getVerdictColor(label);
+
+  const glow1 = getRiskGlow(a1Score);
+  const glow2 = getRiskGlow(a2Score);
+  const glow3 = getRiskGlow(a3Score);
+  const cGlow = getVerdictGlow(label);
+
+  /* ── 4. Layout coordinates (Symmetric & Rhythmic) ────────────── */
+  const VW = 960, VH = 420;
+
+  // Left Node: Input (w=200, h=110, centered at y=210)
+  const IN_X = 40, IN_Y = 155, IN_W = 200, IN_H = 110, IN_RX = 10;
+  const IN_CX = IN_X + IN_W / 2;
+
+  // Middle Nodes: Agents (w=270, h=90, centered at x=480)
+  const AG_X = 345, AG_W = 270, AG_H = 90, AG_RX = 10;
+  const AG_Y  = [45, 165, 285];
+  const AG_CY = [90, 210, 330];
+  const AG_CX = AG_X + AG_W / 2;
+
+  // Right Node: Verdict (w=200, h=140, centered at y=210)
+  const CN_X = 720, CN_Y = 140, CN_W = 200, CN_H = 140, CN_RX = 12;
+  const CN_CX = CN_X + CN_W / 2;
+
+  // Connection Ports
+  const portIN_X   = IN_X + IN_W;         // 240
+  const portIN_Y   = [180, 210, 240];     // Balanced vertical distribution on Input edge
+
+  const portAG_L_X = AG_X;                // 345
+  const portAG_R_X = AG_X + AG_W;         // 615
+
+  const portCN_X   = CN_X;                // 720
+  const portCN_Y   = [175, 210, 245];     // Balanced vertical distribution on Verdict edge
+
+  /* ── 5. Unique ID for scoped CSS & keyframes ────────────────── */
+  const uid = 'an_' + Math.random().toString(36).slice(2, 8);
+  const lines = [];
+  const p = s => lines.push(s);
+
+  /* ── 6. Assemble SVG ────────────────────────────────────────── */
+  p(`<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;background:#070E18;padding:0;margin:0;border-radius:12px;">`);
+  p(`<svg viewBox="0 0 ${VW} ${VH}" width="100%" height="auto"`);
+  p(` xmlns="http://www.w3.org/2000/svg"`);
+  p(` role="img"`);
+  p(` aria-label="Agent pipeline network: consensus ${consensus} of 3, verdict ${label}"`);
+  p(` style="display:block;min-width:760px;font-family:'JetBrains Mono','Fira Code',Consolas,monospace;background:#070E18;">`);
+
+  // Defs: Gradients, Patterns, Filters, Markers, ClipPaths
+  p(`<defs>`);
+  p(`<style>
+    @media (prefers-reduced-motion: reduce) {
+      .flow-dash_${uid} { animation: none !important; }
+      .pulse-dot_${uid} { animation: none !important; }
+    }
+    .mono-num, text { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
+  </style>`);
+
+
+  // Card background gradient (Dark glassmorphism)
+  p(`<linearGradient id="card_grad_${uid}" x1="0" y1="0" x2="0" y2="1">`);
+  p(`  <stop offset="0%" stop-color="#111E33" stop-opacity="0.96"/>`);
+  p(`  <stop offset="100%" stop-color="#0A1322" stop-opacity="0.98"/>`);
+  p(`</linearGradient>`);
+
+  // Subtle verdict radial glow
+  p(`<radialGradient id="verdict_glow_${uid}" cx="50%" cy="50%" r="65%">`);
+  p(`  <stop offset="0%" stop-color="${vc}" stop-opacity="0.08"/>`);
+  p(`  <stop offset="100%" stop-color="${vc}" stop-opacity="0.0"/>`);
+  p(`</radialGradient>`);
+
+  // Precision docking arrowhead markers (dock directly into destination card border)
+  const markerColors = [
+    { id: 'emerald', raw: '#10B981' },
+    { id: 'amber',   raw: '#F59E0B' },
+    { id: 'crimson', raw: '#EF4444' }
+  ];
+  markerColors.forEach(m => {
+    p(`<marker id="arr_${m.id}_${uid}" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">`);
+    p(`  <path d="M 1 1 L 7 4 L 1 7 Z" fill="${m.raw}"/>`);
+    p(`</marker>`);
+  });
+
+  // Clip paths for agent cards (for the 4px accent left-stripe)
+  for (let i = 0; i < 3; i++) {
+    p(`<clipPath id="clip_ag_${i}_${uid}">`);
+    p(`  <rect x="${AG_X}" y="${AG_Y[i]}" width="${AG_W}" height="${AG_H}" rx="${AG_RX}"/>`);
+    p(`</clipPath>`);
+  }
+  p(`</defs>`);
+
+  // 1. Canvas Background (Plain Dark OLED)
+  p(`<rect width="${VW}" height="${VH}" fill="#070E18"/>`);
+
+  // 2. Stage Column Badges (Centered above each column)
+  function drawStageHeader(x, y, num, text, color) {
+    const pillW = 144, pillH = 24;
+    const px = x - pillW / 2;
+    p(`<g>`);
+    p(`  <rect x="${px}" y="${y}" width="${pillW}" height="${pillH}" rx="12" fill="#0D1B2E" stroke="#1E293B" stroke-width="1"/>`);
+    p(`  <circle cx="${px + 16}" cy="${y + 12}" r="3" fill="${color}" opacity="0.9"/>`);
+    p(`  <text x="${px + 28}" y="${y + 16}" font-size="9.5" font-weight="700" fill="#94A3B8" letter-spacing="1.2">${num}  ${text}</text>`);
+    p(`</g>`);
+  }
+
+  drawStageHeader(IN_CX, 14, '01', 'INPUT EVENT', '#38BDF8');
+  drawStageHeader(AG_CX, 14, '02', 'MULTI-AGENT', '#818CF8');
+  drawStageHeader(CN_CX, 14, '03', 'FINAL VERDICT', vc);
+
+  // 3. Connectors & Data Flow (Rendered behind nodes)
+  function getMarkerId(col) {
+    if (col === '#10B981') return 'emerald';
+    if (col === '#F59E0B') return 'amber';
+    return 'crimson';
+  }
+
+  function drawConnector(score, color, pY_in, agCY, pY_out) {
+    const sw = (1.5 + (score / 100) * 1.5).toFixed(1);
+    const mId = getMarkerId(color);
+
+    // Left cubic bezier: from Input edge to Agent left edge
+    const midX_left = (portIN_X + portAG_L_X) / 2;
+    const dLeft = `M ${portIN_X} ${pY_in} C ${midX_left} ${pY_in}, ${midX_left} ${agCY}, ${portAG_L_X} ${agCY}`;
+
+    // Right cubic bezier: from Agent right edge to Verdict left edge
+    const midX_right = (portAG_R_X + portCN_X) / 2;
+    const dRight = `M ${portAG_R_X} ${agCY} C ${midX_right} ${agCY}, ${midX_right} ${pY_out}, ${portCN_X} ${pY_out}`;
+
+    // Base connection tracks
+    p(`<path d="${dLeft}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" opacity="0.45"/>`);
+    p(`<path d="${dRight}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" opacity="0.45" marker-end="url(#arr_${mId}_${uid})"/>`);
+
+    // Circular terminal ports:
+    // 1. Output port at Input Card edge
+    p(`<circle cx="${portIN_X}" cy="${pY_in}" r="3" fill="#070E18" stroke="${color}" stroke-width="1.8"/>`);
+    // 2. Output port at Agent Card right edge
+    p(`<circle cx="${portAG_R_X}" cy="${agCY}" r="3" fill="#070E18" stroke="${color}" stroke-width="1.8"/>`);
+  }
+
+  drawConnector(a1Score, c1, portIN_Y[0], AG_CY[0], portCN_Y[0]);
+  drawConnector(a2Score, c2, portIN_Y[1], AG_CY[1], portCN_Y[1]);
+  drawConnector(a3Score, c3, portIN_Y[2], AG_CY[2], portCN_Y[2]);
+
+  // 4. Card 1: Input Node (Left Column)
+  p(`<g>`);
+  // Drop shadow / glow
+  p(`  <rect x="${IN_X}" y="${IN_Y}" width="${IN_W}" height="${IN_H}" rx="${IN_RX}" fill="url(#card_grad_${uid})" stroke="#0284C7" stroke-width="1.2" style="filter: drop-shadow(0 4px 16px rgba(2, 132, 199, 0.22));"/>`);
+  // Top subtle highlight accent
+  p(`  <rect x="${IN_X + 16}" y="${IN_Y}" width="${IN_W - 32}" height="1.5" fill="#38BDF8" opacity="0.75"/>`);
+  
+  // Icon + Category
+  p(`  <svg x="${IN_X + 16}" y="${IN_Y + 16}" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">`);
+  p(`    <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>`);
+  p(`  </svg>`);
+  p(`  <text x="${IN_X + 36}" y="${IN_Y + 27}" font-size="10" font-weight="700" fill="#7DD3FC" letter-spacing="1.2">TRANSACTION</text>`);
+
+  // Main Identifier
+  p(`  <text x="${IN_X + 16}" y="${IN_Y + 58}" font-size="${txFontSize}" font-weight="700" fill="#F8FAFC" class="mono-num">${displayTxId}</text>`);
+
+  // Context Tag / Pill
+  const badgeColor = isManual ? '#F59E0B' : '#38BDF8';
+  const badgeW = isManual ? (rawAmount ? 150 : 130) : (rawAmount ? 140 : 105);
+  p(`  <rect x="${IN_X + 16}" y="${IN_Y + 74}" width="${badgeW}" height="19" rx="4" fill="${badgeColor}" fill-opacity="0.12" stroke="${badgeColor}" stroke-opacity="0.3" stroke-width="1"/>`);
+  p(`  <text x="${IN_X + 16 + badgeW/2}" y="${IN_Y + 87}" text-anchor="middle" font-size="8.5" font-weight="700" fill="${badgeColor}" letter-spacing="0.8">${txBadge}</text>`);
+  p(`</g>`);
+
+  // 5. Cards 2-4: Agent Pipeline (Middle Column)
+  const agents = [
+    { name: 'Behavior Analyzer',     role: 'PROFILE DEVIATION', score: a1Score, color: c1, glow: glow1, y: AG_Y[0] },
+    { name: 'Risk Assessor',         role: 'RISK HEURISTICS',   score: a2Score, color: c2, glow: glow2, y: AG_Y[1] },
+    { name: 'Transaction Validator', role: 'PATTERN ANOMALIES', score: a3Score, color: c3, glow: glow3, y: AG_Y[2] }
+  ];
+
+  agents.forEach((a, i) => {
+    p(`<g>`);
+    // Card Base
+    p(`  <rect x="${AG_X}" y="${a.y}" width="${AG_W}" height="${AG_H}" rx="${AG_RX}" fill="url(#card_grad_${uid})" stroke="${a.color}" stroke-opacity="0.75" stroke-width="1.2" style="filter: drop-shadow(0 4px 14px ${a.glow});"/>`);
+    
+    // Left Accent Stripe (clipped to rounded corners)
+    p(`  <rect x="${AG_X}" y="${a.y}" width="4" height="${AG_H}" fill="${a.color}" clip-path="url(#clip_ag_${i}_${uid})"/>`);
+
+    // Top Row: Agent Name + Level Tag Pill
+    p(`  <text x="${AG_X + 18}" y="${a.y + 24}" font-size="12.5" font-weight="600" fill="#F1F5F9">${a.name}</text>`);
+
+    // Level Pill
+    const tag = getLevelTag(a.score);
+    const pillW = tag === 'ELEVATED' ? 68 : 46;
+    const pillX = (AG_X + AG_W) - pillW - 14;
+    p(`  <rect x="${pillX}" y="${a.y + 12}" width="${pillW}" height="18" rx="4" fill="${a.color}" fill-opacity="0.12" stroke="${a.color}" stroke-opacity="0.4" stroke-width="1"/>`);
+    p(`  <text x="${pillX + pillW/2}" y="${a.y + 24}" text-anchor="middle" font-size="9" font-weight="800" fill="${a.color}" letter-spacing="1">${tag}</text>`);
+
+    // Middle Row: Score Value + Scale + Role Subtitle
+    p(`  <text x="${AG_X + 18}" y="${a.y + 56}" font-size="25" font-weight="800" fill="${a.color}" class="mono-num">${a.score.toFixed(1)} <tspan font-size="10.5" font-weight="600" fill="#64748B">/ 100</tspan></text>`);
+    p(`  <text x="${AG_X + AG_W - 16}" y="${a.y + 55}" text-anchor="end" font-size="8.5" font-weight="700" fill="#475569" letter-spacing="0.6">${a.role}</text>`);
+
+    // Bottom Row: Sleek Micro-Progress Bar Track & Fill
+    const trackX = AG_X + 18;
+    const trackY = a.y + 68;
+    const trackW = AG_W - 34; // 236px
+    const fillW = Math.max(3, Math.min(trackW, (a.score / 100) * trackW));
+
+    p(`  <rect x="${trackX}" y="${trackY}" width="${trackW}" height="4" rx="2" fill="#1E293B" fill-opacity="0.8"/>`);
+    p(`  <rect x="${trackX}" y="${trackY}" width="${fillW}" height="4" rx="2" fill="${a.color}"/>`);
+    p(`</g>`);
+  });
+
+  // 6. Card 5: Verdict & Consensus (Right Column)
+  p(`<g>`);
+  // Verdict Card Base
+  p(`  <rect x="${CN_X}" y="${CN_Y}" width="${CN_W}" height="${CN_H}" rx="${CN_RX}" fill="url(#card_grad_${uid})" stroke="${vc}" stroke-width="1.8" style="filter: drop-shadow(0 4px 22px ${cGlow});"/>`);
+  p(`  <rect x="${CN_X}" y="${CN_Y}" width="${CN_W}" height="${CN_H}" rx="${CN_RX}" fill="url(#verdict_glow_${uid})"/>`);
+  
+  // Row 1: Consensus Pill Badge
+  const conPillW = 130;
+  const conPillX = CN_CX - conPillW / 2;
+  p(`  <rect x="${conPillX}" y="${CN_Y + 16}" width="${conPillW}" height="20" rx="10" fill="${vc}" fill-opacity="0.12" stroke="${vc}" stroke-opacity="0.3" stroke-width="1"/>`);
+  p(`  <text x="${CN_CX}" y="${CN_Y + 30}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${vc}" letter-spacing="1">CONSENSUS ${consensus} / 3</text>`);
+
+  // Row 2: Final Verdict Banner
+  p(`  <text x="${CN_CX}" y="${CN_Y + 72}" text-anchor="middle" font-size="28" font-weight="900" fill="${vc}" letter-spacing="2.5">${label}</text>`);
+
+  // Row 3: Composite Score
+  p(`  <text x="${CN_CX}" y="${CN_Y + 102}" text-anchor="middle" font-size="10.5" font-weight="600" fill="#94A3B8" letter-spacing="0.6">COMPOSITE SCORE</text>`);
+  p(`  <text x="${CN_CX}" y="${CN_Y + 120}" text-anchor="middle" font-size="14" font-weight="800" fill="#F8FAFC" class="mono-num">${combined.toFixed(1)} <tspan font-size="9.5" font-weight="500" fill="#64748B">/ 100</tspan></text>`);
+  p(`</g>`);
+
+  p(`</svg>`);
+  p(`</div>`);
+
+  return lines.join('\n');
+}
+"""
+
+# ---------------------------------------------------------------------------
+# CSS keyframes and variables reference
+# ---------------------------------------------------------------------------
+NETWORK_CSS = """
+:root {
+  --color-safe: #10B981;
+  --color-elevated: #F59E0B;
+  --color-danger: #EF4444;
+  --color-muted: #64748B;
+  --color-cyan: #38BDF8;
+  --color-text: #F8FAFC;
+  --bg-node: #0E1726;
+  --bg-canvas: #070E18;
+  --glow-safe: rgba(16, 185, 129, 0.25);
+  --glow-elevated: rgba(245, 158, 11, 0.25);
+  --glow-danger: rgba(239, 68, 68, 0.25);
+  --glow-safe-consensus: rgba(16, 185, 129, 0.32);
+  --glow-elevated-consensus: rgba(245, 158, 11, 0.32);
+  --glow-danger-consensus: rgba(239, 68, 68, 0.32);
+}
+
+@keyframes flow {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: -34; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-dash {
+    animation: none !important;
+  }
+}
+"""
+
+# ---------------------------------------------------------------------------
+# Self-contained HTML template for Streamlit components.html
+# ---------------------------------------------------------------------------
+_HTML_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {{
+  --color-safe: #10B981;
+  --color-elevated: #F59E0B;
+  --color-danger: #EF4444;
+  --color-muted: #64748B;
+  --color-cyan: #38BDF8;
+  --color-text: #F8FAFC;
+  --bg-node: #0E1726;
+  --bg-canvas: #070E18;
+  --glow-safe: rgba(16, 185, 129, 0.25);
+  --glow-elevated: rgba(245, 158, 11, 0.25);
+  --glow-danger: rgba(239, 68, 68, 0.25);
+  --glow-safe-consensus: rgba(16, 185, 129, 0.32);
+  --glow-elevated-consensus: rgba(245, 158, 11, 0.32);
+  --glow-danger-consensus: rgba(239, 68, 68, 0.32);
+}}
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+html, body {{ background: var(--bg-canvas, #070E18); overflow-x: auto; overflow-y: hidden; width: 100%; }}
+body {{ padding: 0; margin: 0; }}
+</style>
+</head>
+<body>
+<script>
+{js}
+</script>
+<script>
+(function(){{
+  var result = {result_json};
+  document.body.innerHTML = network(result);
+}})();
+</script>
+</body>
+</html>
+"""
+
+
+def build_js_input(r: dict) -> dict:
+    """Map the app result dict -> the shape the JS `network()` function expects."""
+    tx_id = str(r.get("tx_id", "TXN"))
+    return {
+        "t": {
+            "id": tx_id,
+            "user_id": str(r.get("user_id", "")),
+            "amount": str(r.get("amount_str", "")),
+        },
+        "behavior": float(r.get("behavior_score", 0.0)),
+        "velocity": float(r.get("velocity_score", 0.0)),
+        "risk":     float(r.get("transaction_score", 0.0)),
+        "anomaly":  float(r.get("anomaly_score", 0.0)),
+        "combined": float(r.get("fraud_score", 0.0)),
+        "consensus": int(r.get("consensus", 0)),
+        "confidence": float(r.get("confidence", 0.0)),
+        "label":    str(r.get("verdict", "SAFE")),
+    }
+
+
+def render_agent_network(result: dict) -> str:
+    """
+    Return a self-contained HTML string for
+    ``st.components.v1.html(render_agent_network(result), height=440)``.
+
+    Parameters
+    ----------
+    result : dict
+        The analysis result dict returned by analyze_tx / analyze_manual_tx.
+    """
+    import json
+    obj = build_js_input(result)
+    return _HTML_TEMPLATE.format(
+        js=_NETWORK_JS,
+        result_json=json.dumps(obj),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Standalone test runner
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    import pathlib
+
+    samples = [
+        {
+            "name": "safe",
+            "behavior_score": 10.0, "velocity_score": 8.0,
+            "transaction_score": 18.5, "anomaly_score": 0.0,
+            "fraud_score": 12.3, "consensus": 0, "verdict": "SAFE", "tx_id": "T7", "amount_str": "$240.00",
+        },
+        {
+            "name": "suspicious",
+            "behavior_score": 55.0, "velocity_score": 48.0,
+            "transaction_score": 72.0, "anomaly_score": 35.0,
+            "fraud_score": 58.1, "consensus": 2, "verdict": "SUSPICIOUS", "tx_id": "TXN-42", "amount_str": "$1,200.00",
+        },
+        {
+            "name": "fraud",
+            "behavior_score": 88.0, "velocity_score": 91.0,
+            "transaction_score": 85.0, "anomaly_score": 79.0,
+            "fraud_score": 86.5, "consensus": 3, "verdict": "FRAUD", "tx_id": "TXN-999", "amount_str": "$9,500.00",
+        },
+        {
+            "name": "manual_user",
+            "behavior_score": 36.0, "velocity_score": 36.0,
+            "transaction_score": 4.3, "anomaly_score": 0.0,
+            "fraud_score": 12.8, "consensus": 0, "verdict": "SAFE", "tx_id": "U1757 (manual)", "amount_str": "$450.00",
+        },
+    ]
+
+    base = pathlib.Path(__file__).parent
+    for s in samples:
+        name = s.pop("name")
+        out = base / f"_test_network_{name}.html"
+        out.write_text(render_agent_network(s), encoding="utf-8")
+        print(f"Wrote: {out.resolve()}")

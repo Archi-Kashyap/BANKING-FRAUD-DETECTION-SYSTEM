@@ -91,6 +91,25 @@ class FraudContext:
     # --------------------------------------------------------------
 
     def _train_model(self):
+        cache_file = os.path.join(os.path.dirname(os.path.abspath(DATASET_PATH)), "cache_fraud_model.joblib")
+        if os.path.exists(cache_file):
+            try:
+                import joblib
+                cached = joblib.load(cache_file)
+                self.model = cached["model"]
+                self.ml_probabilities = cached["ml_probabilities"]
+                self.prevalence = cached["prevalence"]
+                self.roc_auc = cached["roc_auc"]
+                self.pr_auc = cached["pr_auc"]
+                self.weak_signal = cached["weak_signal"]
+                self.ml_threshold = cached["ml_threshold"]
+                self.model_name = cached.get("model_name", ML_MODEL_NAME)
+                if self.verbose:
+                    print(f"ML model: {self.model_name} (loaded from disk cache)")
+                return
+            except Exception:
+                pass
+
         X = self.df[CATEGORICAL_FEATURES + NUMERIC_FEATURES].copy()
         y = self.df["fraud_label"].astype(int).values
 
@@ -119,6 +138,21 @@ class FraudContext:
         self.model = pipeline
         self.ml_probabilities = pipeline.predict_proba(X)[:, 1]
         self.model_name = ML_MODEL_NAME
+
+        try:
+            import joblib
+            joblib.dump({
+                "model": self.model,
+                "ml_probabilities": self.ml_probabilities,
+                "prevalence": self.prevalence,
+                "roc_auc": self.roc_auc,
+                "pr_auc": self.pr_auc,
+                "weak_signal": self.weak_signal,
+                "ml_threshold": self.ml_threshold,
+                "model_name": self.model_name,
+            }, cache_file)
+        except Exception:
+            pass
 
         if self.verbose:
             print(f"ML model: {self.model_name}")
